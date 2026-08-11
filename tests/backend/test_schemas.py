@@ -31,6 +31,15 @@ class TestSchemas(unittest.TestCase):
         # screenshot_url alone is sufficient (proves the future vision path is pre-wired)
         CompetitorAdInput(screenshot_url="https://example.com/ad.png")
 
+    def test_competitor_input_accepts_running_since_and_style_notes(self):
+        draft = CompetitorAdInput(
+            ad_copy="Save big today!",
+            running_since="March 2025",
+            style_notes="minimalist font and colors"
+        )
+        self.assertEqual(draft.running_since, "March 2025")
+        self.assertEqual(draft.style_notes, "minimalist font and colors")
+
     def test_competitor_analysis_defaults(self):
         analysis = CompetitorAdAnalysis()
         self.assertTrue(analysis.provided)

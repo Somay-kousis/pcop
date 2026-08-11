@@ -17,7 +17,9 @@ class CompetitorAdInput(BaseModel):
     ad_copy: Optional[str] = Field(default=None, max_length=5000, description="Manually pasted competitor ad headline/body text")
     ad_library_url: Optional[str] = Field(default=None, description="Meta Ad Library link kept for provenance only -- never fetched server-side")
     competitor_brand: Optional[str] = Field(default=None, description="Name of the competitor brand")
-    screenshot_url: Optional[str] = Field(default=None, description="Reserved for a future vision-analysis pass; accepted and stored but not analyzed yet")
+    screenshot_url: Optional[str] = Field(default=None, description="User-provided screenshot of the competitor ad, as a data: URI. Analyzed directly by a vision-capable provider when one is configured; otherwise stored but not analyzed.")
+    running_since: Optional[str] = Field(default=None, max_length=100, description="How long the ad has reportedly been active in the Ad Library (user-read, e.g. 'March 2025'). A long-running ad is a signal it's performing well.")
+    style_notes: Optional[str] = Field(default=None, max_length=1000, description="User's free-text notes on the competitor ad's visual style to factor into differentiation guidance (e.g. 'minimalist font and colors')")
     source: Literal["MANUAL_PASTE", "AD_LIBRARY_URL", "SCREENSHOT"] = Field(default="MANUAL_PASTE")
 
     @model_validator(mode="after")

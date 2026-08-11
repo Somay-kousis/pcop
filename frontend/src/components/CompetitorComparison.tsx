@@ -38,6 +38,22 @@ export const CompetitorComparison: React.FC<CompetitorComparisonProps> = ({ comp
               </div>
             </div>
           )}
+          {competitor.visual_analysis && (
+            <div>
+              <div className="text-[9px] text-[#71717A] uppercase mb-1">Visual Style</div>
+              {typeof competitor.visual_analysis.note === 'string' ? (
+                <div className="text-[10px] text-[#71717A] italic leading-relaxed">{competitor.visual_analysis.note}</div>
+              ) : (
+                <div className="text-[10px] text-[#D4D4D8] leading-relaxed space-y-0.5">
+                  {typeof competitor.visual_analysis.mood === 'string' && <div>Mood: {competitor.visual_analysis.mood}</div>}
+                  {typeof competitor.visual_analysis.font_style === 'string' && <div>Font: {competitor.visual_analysis.font_style}</div>}
+                  {Array.isArray(competitor.visual_analysis.dominant_colors) && (
+                    <div>Colors: {(competitor.visual_analysis.dominant_colors as string[]).join(', ')}</div>
+                  )}
+                </div>
+              )}
+            </div>
+          )}
         </div>
 
         {/* Ours column */}

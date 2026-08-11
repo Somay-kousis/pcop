@@ -31,8 +31,26 @@ GROQ_CHAT_URL = "https://api.groq.com/openai/v1/chat/completions"
 # llama-3.3-70b-versatile was deprecated June 2026; this is Groq's current
 # recommended replacement for that tier.
 GROQ_MODEL = "openai/gpt-oss-120b"
+# gpt-oss-120b is text-only. Screenshot analysis needs a multimodal model.
+GROQ_VISION_MODEL = "meta-llama/llama-4-scout-17b-16e-instruct"
 
 _groq_key_rotation_index = 0
+
+
+def _decode_data_uri(value: str) -> Optional[tuple]:
+    """Returns (mime_type, raw_bytes) for a data: URI, or None for anything else
+    (e.g. a plain http(s) URL) -- Vertex's inline-bytes API needs raw bytes,
+    it can't fetch an arbitrary URL itself."""
+    import re
+    import base64
+    match = re.match(r"^data:(image/[a-zA-Z+]+);base64,(.+)$", value or "", re.DOTALL)
+    if not match:
+        return None
+    mime_type, b64_data = match.groups()
+    try:
+        return mime_type, base64.b64decode(b64_data)
+    except Exception:
+        return None
 
 
 def _get_groq_keys() -> List[str]:
@@ -416,35 +434,90 @@ class ProductionCompetitorProvider(BaseCompetitorProvider):
             logger.warning("No LLM credentials configured for competitor analysis. Falling back to MockCompetitorProvider.")
             return await self.fallback.analyze_competitor_ad(competitor, brief)
 
-        ad_copy = competitor.get("ad_copy", "")
+        ad_copy = (competitor.get("ad_copy") or "").strip()
+        has_text = bool(ad_copy)
+        screenshot_url = competitor.get("screenshot_url")
         brand = competitor.get("competitor_brand", "the competitor")
+
+        longevity_note = ""
+        running_since = competitor.get("running_since")
+        if running_since:
+            longevity_note = (
+                f" This ad has reportedly been running continuously since {running_since}, which is a "
+                "signal it's performing well -- advertisers don't keep paying for a losing ad."
+            )
+        style_note = ""
+        style_notes = competitor.get("style_notes")
+        if style_notes:
+            style_note = f" The user wants the differentiation guidance to explicitly account for this style note: \"{style_notes}\"."
+
         system_prompt = "You are a competitive ad-intelligence analyst. Respond with strict JSON only."
-        user_prompt = (
-            f"Analyze this competitor ad from '{brand}': \"{ad_copy}\". "
-            f"We are marketing: {brief.get('product_name')} - {brief.get('product_description')}. "
-            "Respond ONLY with JSON: {\"positioning\":str, \"hook_angle\":str, \"tone\":str, "
+        json_shape = (
+            "{\"positioning\":str, \"hook_angle\":str, \"tone\":str, "
             "\"claims\":[str], \"call_to_action\":str, \"strengths\":[str], \"weaknesses\":[str], "
             "\"differentiation_angles\":[str]}"
         )
+        user_prompt = (
+            f"Analyze this competitor ad from '{brand}': \"{ad_copy}\".{longevity_note}{style_note} "
+            f"We are marketing: {brief.get('product_name')} - {brief.get('product_description')}. "
+            f"Respond ONLY with JSON: {json_shape}"
+        )
 
-        result = await self._try_openai(brief, competitor, system_prompt, user_prompt)
-        if result:
-            return result
-        result = await self._try_vertex(brief, competitor, system_prompt, user_prompt)
-        if result:
-            return result
-        result = await self._try_groq(brief, competitor, system_prompt, user_prompt)
-        if result:
-            return result
-        result = await self._try_gemini_legacy(brief, competitor, user_prompt)
-        if result:
-            return result
+        if screenshot_url:
+            vision_json_shape = json_shape[:-1] + (
+                ", \"visual_analysis\":{\"dominant_colors\":[str], \"font_style\":str, "
+                "\"layout_notes\":str, \"mood\":str}}"
+            )
+            vision_user_prompt = (
+                f"Analyze the attached competitor ad screenshot from '{brand}'"
+                + (f" (pasted copy for reference: \"{ad_copy}\")" if has_text else "")
+                + f".{longevity_note}{style_note} "
+                f"We are marketing: {brief.get('product_name')} - {brief.get('product_description')}. "
+                f"Also describe its visual style. Respond ONLY with JSON: {vision_json_shape}"
+            )
+            modalities = ["TEXT", "VISUAL"] if has_text else ["VISUAL"]
+
+            result = await self._try_openai_vision(brief, competitor, system_prompt, vision_user_prompt, screenshot_url, modalities)
+            if result:
+                return result
+            result = await self._try_vertex_vision(brief, competitor, vision_user_prompt, screenshot_url, modalities)
+            if result:
+                return result
+            result = await self._try_groq_vision(brief, competitor, system_prompt, vision_user_prompt, screenshot_url, modalities)
+            if result:
+                return result
+            if not has_text:
+                # No text signal to fall back on either -- vision was the only
+                # path and it's exhausted.
+                logger.warning("Screenshot provided but no vision-capable provider succeeded, and no ad_copy to fall back on.")
+                return await self.fallback.analyze_competitor_ad(competitor, brief)
+
+        if has_text:
+            result = await self._try_openai(brief, competitor, system_prompt, user_prompt)
+            if result:
+                return result
+            result = await self._try_vertex(brief, competitor, system_prompt, user_prompt)
+            if result:
+                return result
+            result = await self._try_groq(brief, competitor, system_prompt, user_prompt)
+            if result:
+                return result
+            result = await self._try_gemini_legacy(brief, competitor, user_prompt)
+            if result:
+                return result
 
         return await self.fallback.analyze_competitor_ad(competitor, brief)
 
-    def _build_analysis(self, brief: Dict[str, Any], competitor: Dict[str, Any], model_used: str, parsed: Dict[str, Any]) -> CompetitorAdAnalysis:
+    def _build_analysis(
+        self,
+        brief: Dict[str, Any],
+        competitor: Dict[str, Any],
+        model_used: str,
+        parsed: Dict[str, Any],
+        analyzed_modalities: Optional[List[str]] = None
+    ) -> CompetitorAdAnalysis:
         # Strip any of our explicit kwargs the model may have echoed back into
-        # its JSON (it was only asked for the other 7 fields, but a
+        # its JSON (it was only asked for the other fields, but a
         # hallucinated overlap would otherwise raise "multiple values for
         # keyword argument" and needlessly fail this provider attempt).
         reserved = {"provided", "inferred_audience", "analyzed_modalities", "source_url", "model_used"}
@@ -452,11 +525,101 @@ class ProductionCompetitorProvider(BaseCompetitorProvider):
         return CompetitorAdAnalysis(
             provided=True,
             inferred_audience=brief.get("target_audience", "General Performance Audience"),
-            analyzed_modalities=["TEXT"],
+            analyzed_modalities=analyzed_modalities or ["TEXT"],
             source_url=competitor.get("ad_library_url"),
             model_used=model_used,
             **parsed
         )
+
+    async def _try_openai_vision(self, brief, competitor, system_prompt, vision_user_prompt, screenshot_url, modalities) -> Optional[CompetitorAdAnalysis]:
+        if not self.openai_key:
+            return None
+        try:
+            import httpx, json as jsonlib
+            async with httpx.AsyncClient(timeout=25.0) as client:
+                headers = {"Authorization": f"Bearer {self.openai_key}", "Content-Type": "application/json"}
+                payload = {
+                    "model": "gpt-4o",
+                    "messages": [
+                        {"role": "system", "content": system_prompt},
+                        {"role": "user", "content": [
+                            {"type": "text", "text": vision_user_prompt},
+                            {"type": "image_url", "image_url": {"url": screenshot_url}}
+                        ]}
+                    ],
+                    "temperature": 0.4,
+                    "max_tokens": MAX_ANALYSIS_OUTPUT_TOKENS,
+                    "response_format": {"type": "json_object"}
+                }
+                res = await client.post("https://api.openai.com/v1/chat/completions", json=payload, headers=headers)
+                if res.status_code == 200:
+                    text = res.json()["choices"][0]["message"]["content"]
+                    return self._build_analysis(brief, competitor, "Production GPT-4o Vision", jsonlib.loads(text), analyzed_modalities=modalities)
+                logger.warning(f"OpenAI vision competitor analysis returned {res.status_code}.")
+        except Exception as e:
+            logger.error(f"OpenAI vision competitor analysis failed: {e}")
+        return None
+
+    async def _try_vertex_vision(self, brief, competitor, vision_user_prompt, screenshot_url, modalities) -> Optional[CompetitorAdAnalysis]:
+        if not self.use_vertex:
+            return None
+        vertex_client = get_vertex_client()
+        if not vertex_client:
+            logger.warning("Vertex AI configured but client init failed for vision competitor analysis.")
+            return None
+        decoded = _decode_data_uri(screenshot_url)
+        if not decoded:
+            logger.warning("Vertex AI vision only supports base64 data-URI screenshots; skipping.")
+            return None
+        mime_type, image_bytes = decoded
+        try:
+            import asyncio, json as jsonlib
+            from google.genai import types as genai_types
+            response = await asyncio.to_thread(
+                vertex_client.models.generate_content,
+                model=VERTEX_TEXT_MODEL,
+                contents=[genai_types.Part.from_bytes(data=image_bytes, mime_type=mime_type), vision_user_prompt],
+                config=genai_types.GenerateContentConfig(
+                    max_output_tokens=MAX_ANALYSIS_OUTPUT_TOKENS,
+                    response_mime_type="application/json"
+                )
+            )
+            if not response.text:
+                return None
+            return self._build_analysis(brief, competitor, f"Production Vertex AI Vision ({VERTEX_TEXT_MODEL})", jsonlib.loads(response.text), analyzed_modalities=modalities)
+        except Exception as e:
+            logger.error(f"Vertex AI vision competitor analysis failed: {e}")
+        return None
+
+    async def _try_groq_vision(self, brief, competitor, system_prompt, vision_user_prompt, screenshot_url, modalities) -> Optional[CompetitorAdAnalysis]:
+        groq_key = _next_groq_key()
+        if not groq_key:
+            return None
+        try:
+            import httpx, json as jsonlib
+            async with httpx.AsyncClient(timeout=25.0) as client:
+                headers = {"Authorization": f"Bearer {groq_key}", "Content-Type": "application/json"}
+                payload = {
+                    "model": GROQ_VISION_MODEL,
+                    "messages": [
+                        {"role": "system", "content": system_prompt},
+                        {"role": "user", "content": [
+                            {"type": "text", "text": vision_user_prompt},
+                            {"type": "image_url", "image_url": {"url": screenshot_url}}
+                        ]}
+                    ],
+                    "temperature": 0.4,
+                    "max_tokens": MAX_ANALYSIS_OUTPUT_TOKENS,
+                    "response_format": {"type": "json_object"}
+                }
+                res = await client.post(GROQ_CHAT_URL, json=payload, headers=headers)
+                if res.status_code == 200:
+                    text = res.json()["choices"][0]["message"]["content"]
+                    return self._build_analysis(brief, competitor, f"Production Groq Vision ({GROQ_VISION_MODEL})", jsonlib.loads(text), analyzed_modalities=modalities)
+                logger.warning(f"Groq vision competitor analysis returned {res.status_code}.")
+        except Exception as e:
+            logger.error(f"Groq vision competitor analysis failed: {e}")
+        return None
 
     async def _try_openai(self, brief, competitor, system_prompt, user_prompt) -> Optional[CompetitorAdAnalysis]:
         if not self.openai_key:

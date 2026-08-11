@@ -192,6 +192,22 @@ class MockCompetitorProvider(BaseCompetitorProvider):
         brand = competitor.get("competitor_brand") or "Competitor"
         hook_angle = self._classify_hook(ad_copy)
 
+        strengths = ["Clear, easily scannable hook"] if ad_copy else []
+        running_since = competitor.get("running_since")
+        if running_since:
+            strengths.append(f"Reportedly active since {running_since} -- a long-running ad is a signal it's converting")
+
+        differentiation_angles = list(self.DIFFERENTIATION_MAP.get(hook_angle, self.DIFFERENTIATION_MAP["Direct Value"]))
+        style_notes = competitor.get("style_notes")
+        if style_notes:
+            differentiation_angles.append(f"Match the requested visual style while keeping the message differentiated: \"{style_notes}\"")
+
+        visual_analysis = None
+        if competitor.get("screenshot_url"):
+            # Honest mock: no vision-capable provider is configured (or all
+            # failed), so the screenshot is stored but genuinely not analyzed.
+            visual_analysis = {"note": "Screenshot received but no live vision-capable provider (OpenAI/Vertex/Groq vision) is configured -- only text signals were analyzed."}
+
         return CompetitorAdAnalysis(
             provided=True,
             positioning=f"{brand} leads with a {hook_angle.lower()} angle" if ad_copy else "Insufficient signal to infer positioning",
@@ -200,11 +216,11 @@ class MockCompetitorProvider(BaseCompetitorProvider):
             claims=[s.strip() for s in ad_copy.split(".") if s.strip()][:3],
             call_to_action="Shop Now" if hook_angle == "Discount" else "Learn More",
             inferred_audience=brief.get("target_audience", "General Performance Audience"),
-            strengths=["Clear, easily scannable hook"] if ad_copy else [],
+            strengths=strengths,
             weaknesses=self.WEAKNESS_MAP.get(hook_angle, self.WEAKNESS_MAP["Direct Value"]),
-            differentiation_angles=self.DIFFERENTIATION_MAP.get(hook_angle, self.DIFFERENTIATION_MAP["Direct Value"]),
+            differentiation_angles=differentiation_angles,
             analyzed_modalities=["TEXT"],
-            visual_analysis=None,
+            visual_analysis=visual_analysis,
             source_url=competitor.get("ad_library_url"),
             model_used="Mock Competitor Analyst"
         )

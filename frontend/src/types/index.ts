@@ -30,6 +30,8 @@ export interface CompetitorAdInput {
   ad_library_url?: string;
   competitor_brand?: string;
   screenshot_url?: string;
+  running_since?: string;
+  style_notes?: string;
   source?: 'MANUAL_PASTE' | 'AD_LIBRARY_URL' | 'SCREENSHOT';
 }
 

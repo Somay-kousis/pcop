@@ -286,13 +286,18 @@ export const ClaudeChatInterface: React.FC<ClaudeChatInterfaceProps> = ({
     };
 
     // The backend's one-of validator 422s on an empty competitor object, so only
-    // include it when the user actually typed something.
-    if (competitorDraft.ad_copy.trim()) {
+    // include it when the user actually typed or uploaded something.
+    const hasAdCopy = competitorDraft.ad_copy.trim().length > 0;
+    const hasScreenshot = competitorDraft.screenshot_url.trim().length > 0;
+    if (hasAdCopy || hasScreenshot) {
       requestBody.competitor_ad = {
-        ad_copy: competitorDraft.ad_copy,
+        ad_copy: competitorDraft.ad_copy || undefined,
         ad_library_url: competitorDraft.ad_library_url || undefined,
         competitor_brand: competitorDraft.competitor_brand || undefined,
-        source: 'MANUAL_PASTE'
+        screenshot_url: competitorDraft.screenshot_url || undefined,
+        running_since: competitorDraft.running_since || undefined,
+        style_notes: competitorDraft.style_notes || undefined,
+        source: hasAdCopy ? 'MANUAL_PASTE' : 'SCREENSHOT'
       };
     }
 

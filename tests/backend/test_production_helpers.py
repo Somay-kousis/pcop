@@ -52,6 +52,41 @@ class TestBuildAnalysisReservedKeys(unittest.TestCase):
         self.assertTrue(analysis.provided)
         self.assertEqual(analysis.positioning, "Aggressive discounting")
 
+    def test_build_analysis_defaults_modalities_to_text(self):
+        provider = production.ProductionCompetitorProvider()
+        analysis = provider._build_analysis(
+            brief={}, competitor={}, model_used="x", parsed={"positioning": "p"}
+        )
+        self.assertEqual(analysis.analyzed_modalities, ["TEXT"])
+
+    def test_build_analysis_accepts_explicit_modalities(self):
+        provider = production.ProductionCompetitorProvider()
+        analysis = provider._build_analysis(
+            brief={}, competitor={}, model_used="x", parsed={"positioning": "p"},
+            analyzed_modalities=["TEXT", "VISUAL"]
+        )
+        self.assertEqual(analysis.analyzed_modalities, ["TEXT", "VISUAL"])
+
+
+class TestDecodeDataUri(unittest.TestCase):
+    def test_decodes_valid_data_uri(self):
+        import base64
+        raw = b"fake-jpeg-bytes"
+        uri = f"data:image/jpeg;base64,{base64.b64encode(raw).decode()}"
+        result = production._decode_data_uri(uri)
+        self.assertIsNotNone(result)
+        mime_type, decoded = result
+        self.assertEqual(mime_type, "image/jpeg")
+        self.assertEqual(decoded, raw)
+
+    def test_rejects_plain_http_url(self):
+        self.assertIsNone(production._decode_data_uri("https://example.com/ad.png"))
+
+    def test_rejects_malformed_input(self):
+        self.assertIsNone(production._decode_data_uri("not-a-data-uri"))
+        self.assertIsNone(production._decode_data_uri(""))
+        self.assertIsNone(production._decode_data_uri(None))
+
 
 if __name__ == "__main__":
     unittest.main()
