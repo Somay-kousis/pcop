@@ -1,5 +1,14 @@
 # Pencil AI Marketing OS
 
+<p align="center">
+  <img src="https://img.shields.io/badge/Python-backend-3776AB.svg" alt="Python" />
+  <img src="https://img.shields.io/badge/TypeScript-5-3178C6.svg" alt="TypeScript" />
+  <img src="https://img.shields.io/badge/FastAPI-backend-009688.svg" alt="FastAPI" />
+  <img src="https://img.shields.io/badge/LangGraph-agents-1C3C3C.svg" alt="LangGraph" />
+  <img src="https://img.shields.io/badge/React-18-61DAFB.svg" alt="React" />
+  <img src="https://img.shields.io/badge/Vite-6-646CFF.svg" alt="Vite" />
+</p>
+
 A high-performance campaign staging and multi-agent ad creative orchestration platform. Built with a declarative level-by-level parallel DAG scheduling engine, multi-model generation matrix, brand compliance safety gates, predictive scoring, and official Meta Business SDK staging integration.
 
 ---
@@ -8,40 +17,36 @@ A high-performance campaign staging and multi-agent ad creative orchestration pl
 
 ```mermaid
 flowchart TD
-    %% Define Styles
-    classDef levelStyle fill:#1e1e24,stroke:#3b3f46,stroke-width:1px,color:#d4d4d8;
-    classDef nodeStyle fill:#27272a,stroke:#D97757,stroke-width:1.5px,color:#f4f4f5;
-
     subgraph L1["Level 1 (Topological Entry)"]
-        N1["parse_brief_node\n(Ingests brief & Brand DNA)"]:::nodeStyle
+        N1["parse_brief_node\n(Ingests brief & Brand DNA)"]
     end
 
     subgraph L2["Level 2 (Concurrent Level - asyncio.gather)"]
-        N2["trend_rag_node\n(Competitor & Trend Intelligence)"]:::nodeStyle
-        N3["winner_rag_node\n(Historical Winner Retrieval)"]:::nodeStyle
-        N4["generate_visual_node\n(Adobe Firefly Image Synthesis)"]:::nodeStyle
+        N2["trend_rag_node\n(Competitor & Trend Intelligence)"]
+        N3["winner_rag_node\n(Historical Winner Retrieval)"]
+        N4["generate_visual_node\n(Adobe Firefly Image Synthesis)"]
     end
 
     subgraph L3["Level 3"]
-        N5["generate_copy_matrix_node\n(LLM Copywriter Matrix)"]:::nodeStyle
+        N5["generate_copy_matrix_node\n(LLM Copywriter Matrix)"]
     end
 
     subgraph L4["Level 4"]
-        N6["predictive_scoring_node\n(Variant Performance Matrix Ranking)"]:::nodeStyle
+        N6["predictive_scoring_node\n(Variant Performance Matrix Ranking)"]
     end
 
     subgraph L5["Level 5 (Concurrent Level - asyncio.gather)"]
-        N7["check_compliance_node\n(Brand Safety & IP Guardrail)"]:::nodeStyle
-        N8["clip_alignment_node\n(Joint Cosine Text-Image Math)"]:::nodeStyle
-        N9["generate_audio_node\n(ElevenLabs Neural Voice Synthesis)"]:::nodeStyle
+        N7["check_compliance_node\n(Brand Safety & IP Guardrail)"]
+        N8["clip_alignment_node\n(Joint Cosine Text-Image Math)"]
+        N9["generate_audio_node\n(ElevenLabs Neural Voice Synthesis)"]
     end
 
     subgraph L6["Level 6"]
-        N10["reflection_loop_node\n(Self-Correction & Attempt Evaluator)"]:::nodeStyle
+        N10["reflection_loop_node\n(Self-Correction & Attempt Evaluator)"]
     end
 
     subgraph L7["Level 7"]
-        N11["meta_staging_node\n(facebook-python-business-sdk)"]:::nodeStyle
+        N11["meta_staging_node\n(facebook-python-business-sdk)"]
     end
 
     %% Dependency Connections
@@ -67,14 +72,6 @@ flowchart TD
 
     %% Reflexion Supervisor Loop Connection
     N10 -.->|Reflexion Triggered: Injects Critique & Loops Back| N5
-    
-    style L1 fill:#18181b,stroke:#27272a,color:#a1a1aa
-    style L2 fill:#18181b,stroke:#27272a,color:#a1a1aa
-    style L3 fill:#18181b,stroke:#27272a,color:#a1a1aa
-    style L4 fill:#18181b,stroke:#27272a,color:#a1a1aa
-    style L5 fill:#18181b,stroke:#27272a,color:#a1a1aa
-    style L6 fill:#18181b,stroke:#27272a,color:#a1a1aa
-    style L7 fill:#18181b,stroke:#27272a,color:#a1a1aa
 ```
 
 ---
