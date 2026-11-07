@@ -4,172 +4,92 @@
   <img src="https://img.shields.io/badge/Python-backend-3776AB.svg" alt="Python" />
   <img src="https://img.shields.io/badge/TypeScript-5-3178C6.svg" alt="TypeScript" />
   <img src="https://img.shields.io/badge/FastAPI-backend-009688.svg" alt="FastAPI" />
-  <img src="https://img.shields.io/badge/LangGraph-agents-1C3C3C.svg" alt="LangGraph" />
   <img src="https://img.shields.io/badge/React-18-61DAFB.svg" alt="React" />
   <img src="https://img.shields.io/badge/Vite-6-646CFF.svg" alt="Vite" />
 </p>
 
-Turns a campaign brief into ready-to-stage ads. Agents pull trends and past winning ads, write copy and generate images (Adobe Firefly) in parallel, score the variants, run a brand-safety check, and stage the result through Meta's Business SDK.
+Turns a campaign brief into ready-to-stage ads. Agents pull trends and past winning ads, write copy and generate images (DALL-E 3 or Vertex Imagen) in parallel, score the variants, run a brand-safety check, and stage the result as an ad creative through Meta's Graph API.
 
----
+Paste a competitor's ad and the copy step writes variants that take a different angle, shown side by side in the UI. If the best variant scores under 85 or fails the brand check, the pipeline critiques it and rewrites the copy, up to 2 more times.
 
-## 1. System Topology Overview
+## How it works
+
+A small DAG engine (`backend/app/graph/engine.py`) sorts the 12 nodes into levels at build time, rejects cycles and missing dependencies, and runs each level with `asyncio.gather`. Each node declares which state keys it writes; two nodes in one level can't write the same key.
 
 ```mermaid
 flowchart TD
-    subgraph L1["Level 1 (Topological Entry)"]
-        N1["parse_brief_node\n(Ingests brief & Brand DNA)"]
+    subgraph L1["Level 1"]
+        N1["parse_brief"]
     end
-
-    subgraph L2["Level 2 (Concurrent Level - asyncio.gather)"]
-        N2["trend_rag_node\n(Competitor & Trend Intelligence)"]
-        N3["winner_rag_node\n(Historical Winner Retrieval)"]
-        N4["generate_visual_node\n(Adobe Firefly Image Synthesis)"]
+    subgraph L2["Level 2, parallel"]
+        N2["trend_rag"]
+        N3["winner_rag"]
+        N4["visual<br/>(DALL-E 3 / Imagen)"]
+        N5["competitor_analysis"]
     end
-
     subgraph L3["Level 3"]
-        N5["generate_copy_matrix_node\n(LLM Copywriter Matrix)"]
+        N6["copy_matrix"]
     end
-
     subgraph L4["Level 4"]
-        N6["predictive_scoring_node\n(Variant Performance Matrix Ranking)"]
+        N7["scoring<br/>(picks the best variant)"]
     end
-
-    subgraph L5["Level 5 (Concurrent Level - asyncio.gather)"]
-        N7["check_compliance_node\n(Brand Safety & IP Guardrail)"]
-        N8["clip_alignment_node\n(Joint Cosine Text-Image Math)"]
-        N9["generate_audio_node\n(ElevenLabs Neural Voice Synthesis)"]
+    subgraph L5["Level 5, parallel"]
+        N8["audio<br/>(ElevenLabs)"]
+        N9["compliance<br/>(brand rules)"]
+        N10["clip_alignment"]
     end
-
     subgraph L6["Level 6"]
-        N10["reflection_loop_node\n(Self-Correction & Attempt Evaluator)"]
+        N11["reflection_loop"]
     end
-
     subgraph L7["Level 7"]
-        N11["meta_staging_node\n(facebook-python-business-sdk)"]
+        N12["meta_staging"]
     end
 
-    %% Dependency Connections
-    N1 --> N2
-    N1 --> N3
-    N1 --> N4
-
-    N2 --> N5
-    N3 --> N5
-
-    N5 --> N6
-
+    N1 --> N2 & N3 & N4 & N5
+    N2 & N3 & N5 --> N6
     N6 --> N7
-    N6 --> N9
-    N6 --> N8
-    N4 --> N8
-
-    N7 --> N10
-    N8 --> N10
-    N6 --> N10
-
-    N10 --> N11
-
-    %% Reflexion Supervisor Loop Connection
-    N10 -.->|Reflexion Triggered: Injects Critique & Loops Back| N5
+    N7 --> N8 & N9 & N10
+    N4 --> N10
+    N7 & N9 & N10 --> N11
+    N11 -->|passed, or retries used up| N12
+    N11 -.->|critique, max 2 retries| N6
 ```
 
----
+- **Staging gate.** `meta_staging` refuses any variant that failed the brand check, even after the retries run out.
+- **Failures.** Each node is marked `ABORT` or `DEGRADE`. If trends, winners, competitor analysis, audio or CLIP alignment fail, the run continues without them; a failure anywhere else stops it.
+- **State.** Nodes return only the keys they changed. `execution_steps` and `errors` are appended, everything else is replaced.
+- **Progress.** Each node emits an event over SSE. Late clients get a replay buffer so they don't miss earlier steps.
+- **Providers.** Every external service has a mock (`backend/app/providers/mocks.py`). With no API keys set, the whole pipeline runs on mocks.
 
-## 2. Step-by-Step Execution Lifecycle
+## Run it
 
-Here is the exact next-next-next execution sequence of what happens when a campaign brief is orchestrated:
+Python 3.10+ and Node.js 18+. Copy `backend/.env.example` to `backend/.env` and fill in the keys you have (all optional): `OPENAI_API_KEY`, `GROQ_API_KEY_1`, `GEMINI_API_KEY` or `GOOGLE_CLOUD_PROJECT` for text and images, `ELEVENLABS_API_KEY` for voice, `META_SYSTEM_USER_TOKEN` and `META_AD_ACCOUNT_ID` for staging.
 
-```
-[User Input Brief] 
-       │
-       ▼
-┌────────────────────────────────────────────────────────┐
-│ LEVEL 1: parse_brief_node                              │
-│ - Ingests product description and brand parameters.    │
-│ - Resolves target swatches, typography, and platforms. │
-└────────────────────────┬───────────────────────────────┘
-                         │
-                         ├───────────────────────────────┐
-                         ▼                               ▼
-┌─────────────────────────────────┐   ┌─────────────────────────────────┐
-│ LEVEL 2: trend_rag_node         │   │ LEVEL 2: winner_rag_node         │
-│ - Retreives current hook trends │   │ - Fetches historical winners     │
-│   from Meta Ad Library.         │   │   from semantic vector index.   │
-└────────────────┬────────────────┘   └────────────────┬────────────────┘
-                 │                                     │
-                 └─────────────────┬───────────────────┘
-                                   ▼
-┌────────────────────────────────────────────────────────┐
-│ LEVEL 3: generate_copy_matrix_node                     │
-│ - Generates copy variant options (e.g. 5 matrix angles)│
-│ - Synthesizes visual assets in parallel.               │
-└────────────────────────┬───────────────────────────────┘
-                         │
-                         ▼
-┌────────────────────────────────────────────────────────┐
-│ LEVEL 4: predictive_scoring_node                       │
-│ - Scores all copy matrix variants.                     │
-│ - Ranks & selects the highest-scoring winning variant.  │
-└────────────────────────┬───────────────────────────────┘
-                         │
-                         ▼
-┌────────────────────────────────────────────────────────┐
-│ LEVEL 5: check_compliance, clip_alignment, audio_node   │
-│ - Evaluates brand rules against the winning variant.    │
-│ - Scores visual alignment & generates ElevenLabs TTS.  │
-└────────────────────────┬───────────────────────────────┘
-                         │
-                         ▼
-┌────────────────────────────────────────────────────────┐
-│ LEVEL 6: reflection_loop_node                          │
-│ - Checks if compliance PASSED and score >= 85.         │
-│ - [FAIL] Injects critique and loops back to LEVEL 3.   │
-│ - [PASS] Proceeds to staging.                          │
-└────────────────────────┬───────────────────────────────┘
-                         │
-                         ▼
-┌────────────────────────────────────────────────────────┐
-│ LEVEL 7: meta_staging_node                             │
-│ - Validates compliance is PASSED.                      │
-│ - Stages creative using facebook-python-business-sdk.  │
-└────────────────────────────────────────────────────────┘
-```
-
----
-
-## 3. Core Architecture Features
-
-1. **Declarative Topological Sort**: Resolves execution levels at build time and throws validation errors for cyclical structures or missing dependencies.
-2. **Concurrent Gather**: Executes independent level tasks in parallel using `asyncio.gather()`. Any blocking synchronous operations run inside `asyncio.to_thread()`.
-3. **Reflexion Self-Correction Loop**: Loops back to Level 3 with tailored compliance and score critiques to regenerate creative variations if thresholds are not met.
-4. **State Reducers**: Implements isolated delta-only state returns combined with key-specific merge policies (`APPEND` for logs/errors, `REPLACE` for scalars).
-5. **SSE Event Bus**: Emits real-time progress events per node to the subscriber queue. Supports a replay buffer to prevent event loss for late-connecting clients.
-
----
-
-## 4. Setup & Running
-
-### Prerequisites
-* Python 3.10+
-* Node.js 18+
-
-### Running the Backend
 ```bash
 cd backend
 python3 -m pip install -r requirements.txt
 python3 -m uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
 ```
 
-### Running the Frontend
 ```bash
 cd frontend
 npm install
 npm run dev
 ```
 
-### Running Backend Unit & E2E Tests
+**Tests** (34 unit and end-to-end tests under `tests/backend`):
+
 ```bash
 DATABASE_URL=sqlite:////tmp/pencil_orchestrator_test.db PYTHONPATH=backend python3 -m unittest discover -s tests/backend
 ```
-`DATABASE_URL` points tests at a separate SQLite file so fixture rows don't leak into the campaign history shown by a locally running dev server (which defaults to `/tmp/pencil_orchestrator.db`).
+
+`DATABASE_URL` points tests at a separate SQLite file so fixture rows don't leak into the campaign history of a local dev server (which defaults to `/tmp/pencil_orchestrator.db`).
+
+## Limitations
+
+From `docs/progress.md`:
+
+- **Scoring is a heuristic**, not a trained model. It adds points for headline words and length.
+- **Trend data is sample data.** Meta's Ad Library API only returns political and social-issue ads, so competitor ads come from manual paste instead.
+- **Not yet tested against live accounts:** image generation, voiceover, Vertex AI, and Meta staging.
+- Screenshot / brand-asset upload and a guided-question onboarding flow are not built yet.
