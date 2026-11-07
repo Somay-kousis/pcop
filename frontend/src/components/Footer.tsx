@@ -53,7 +53,7 @@ export const Footer: React.FC = () => {
             <div className="font-display font-bold text-white uppercase tracking-wider text-[11px]">Enterprise</div>
             <ul className="space-y-2">
               <li><a href="#pricing" className="hover:text-white transition-colors">Pencil Pro</a></li>
-              <li><a href="#" className="hover:text-white transition-colors">Unilever Case Study</a></li>
+              <li><a href="#" className="hover:text-white transition-colors">Case Studies</a></li>
               <li><a href="#" className="hover:text-white transition-colors">Bayer Health Case Study</a></li>
               <li><a href="#" className="hover:text-white transition-colors">SOC2 Type II Security</a></li>
               <li><a href="#" className="hover:text-white transition-colors">IP Indemnification</a></li>

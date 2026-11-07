@@ -12,7 +12,7 @@ from facebook_business.adobjects.adcreative import AdCreative
 
 # Authenticate Meta System User Token
 FacebookAdsApi.init(access_token="<META_SYSTEM_USER_TOKEN>")
-account = AdAccount("act_unilever_global_01")
+account = AdAccount("act_000000000000")
 
 # Upload generated video asset to Meta
 video = AdVideo(parent_id=account.get_id_channeling())

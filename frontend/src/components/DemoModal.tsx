@@ -77,7 +77,7 @@ export const DemoModal: React.FC<DemoModalProps> = ({ isOpen, onClose }) => {
                   <input
                     type="email"
                     required
-                    placeholder="sarah@unilever.com"
+                    placeholder="you@brand.com"
                     value={formData.email}
                     onChange={(e) => setFormData({ ...formData, email: e.target.value })}
                     className="w-full bg-gray-950 border border-gray-800 rounded-xl py-2.5 pl-10 pr-4 text-xs text-white focus:outline-none focus:border-yellow-400"

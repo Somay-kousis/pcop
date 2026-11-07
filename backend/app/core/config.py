@@ -24,7 +24,7 @@ class Settings(BaseModel):
     
     # Meta Business SDK
     meta_system_user_token: str = os.getenv("META_SYSTEM_USER_TOKEN", "EAAG_MOCK_TOKEN")
-    meta_ad_account_id: str = os.getenv("META_AD_ACCOUNT_ID", "act_unilever_global_01")
+    meta_ad_account_id: str = os.getenv("META_AD_ACCOUNT_ID", "act_000000000000")
     meta_page_id: str = os.getenv("META_PAGE_ID", "108927162983712")
 
 settings = Settings()
