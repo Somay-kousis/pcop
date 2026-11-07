@@ -9,7 +9,7 @@
   <img src="https://img.shields.io/badge/Vite-6-646CFF.svg" alt="Vite" />
 </p>
 
-A high-performance campaign staging and multi-agent ad creative orchestration platform. Built with a declarative level-by-level parallel DAG scheduling engine, multi-model generation matrix, brand compliance safety gates, predictive scoring, and official Meta Business SDK staging integration.
+Turns a campaign brief into ready-to-stage ads. Agents pull trends and past winning ads, write copy and generate images (Adobe Firefly) in parallel, score the variants, run a brand-safety check, and stage the result through Meta's Business SDK.
 
 ---
 
